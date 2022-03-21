@@ -1,0 +1,562 @@
+---
+title: "Report of m6A-seq Analysis"
+author: | 
+ |
+ | Yuqi Zhao, PhD; Xiwei Wu, MD, PhD
+ |
+ | Integrative Genomics Core, Beckman Research Institute of City of Hope
+ | 
+ |   
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    code_folding: hide
+    toc: yes
+    toc_float: yes
+    keep_md: yes
+  pdf_document:
+    toc: yes
+---
+The basic bioinformatics workflow is described as follows:
+Quality control and preprocessing of FASTQ files are done using [fastp](https://github.com/OpenGene/fastp). The separate reports of quality control are pooled using [MultiQC](https://multiqc.info/).  
+Then sequence quality of IP and Input samples were also verified using fastp. We used [HISAT2](http://daehwankimlab.github.io/hisat2) to map reads to the reference genome Mus musculus (Version: mm10).  
+Mapped reads of IP and input libraries were provided for R package [exomePeak](https://bioconductor.org/packages/exomePeak), which identifies m6A peaks with bed or bigwig format that can be adapted for visualization on the [IGV software](http://www.igv.org).  
+[MEME](http://meme-suite.org) and [HOMER](http://homer.ucsd.edu/homer/motif) were used for de novo and known motif finding followed by localization of the motif with respect to peak summit. Called peaks were annotated by intersection with gene architecture using R package [ChIPseeker](https://bioconductor.org/packages/ChIPseeker).  
+Then [StringTie](https://ccb.jhu.edu/software/stringtie) was used to perform expression level for all mRNAs from input libraries by calculating FPKM (total exon fragments /mapped reads (millions) × exon length (kB)).  
+The differentially expressed mRNAs were selected with log2 (fold change) >1 or log2 (fold change) <-1 and p value < 0.05 by R package [DESeq2](https://bioconductor.org/packages/release/bioc/html/DESeq2.html).  
+  
+![Basic bioinformatics workflow](/Volumes/YZWD/Projects_COH/m6A_seq/IGC-SM-19367__IGC-SM-19366/m6A_bioinfo.png) 
+
+```{r setup, include=FALSE,echo=FALSE,message = FALSE,warning = FALSE,error=TRUE}
+#  
+# if (!requireNamespace("BiocManager", quietly = TRUE))  
+#   install.packages("BiocManager")  
+# BiocManager::install(c("factoextra","ballgown","dplyr","pheatmap","cowplot","ggplot2","qusage","msigdbr","fgsea","kableExtra","enrichR","EnhancedVolcano","magrittr","ggpubr","DESeq2","rtracklayer","exomePeak"))  
+#Change Work Directory and install all the required packages   
+setwd("/Volumes/YZWD/Projects_COH/m6A_seq/IGC-SM-19367__IGC-SM-19366/Processed_Bams/m6A/")
+suppressPackageStartupMessages(library(ChIPseeker))
+suppressPackageStartupMessages(library(DESeq2))
+suppressPackageStartupMessages(library(EnhancedVolcano))
+suppressPackageStartupMessages(library(GenomicRanges))
+suppressPackageStartupMessages(library(RIPSeeker))
+suppressPackageStartupMessages(library(ReactomePA))
+suppressPackageStartupMessages(library(ballgown))
+suppressPackageStartupMessages(library(clusterProfiler))
+suppressPackageStartupMessages(library(cowplot))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(enrichR))
+suppressPackageStartupMessages(library(exomePeak))
+suppressPackageStartupMessages(library(factoextra))
+suppressPackageStartupMessages(library(fgsea))
+suppressPackageStartupMessages(library(ggimage))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(ggplotify))
+suppressPackageStartupMessages(library(ggpubr))
+suppressPackageStartupMessages(library(ggupset))
+suppressPackageStartupMessages(library(kableExtra))
+suppressPackageStartupMessages(library(magrittr))
+suppressPackageStartupMessages(library(msigdbr))
+suppressPackageStartupMessages(library(org.Mm.eg.db))
+suppressPackageStartupMessages(library(BSgenome.Mmusculus.UCSC.mm10))
+suppressPackageStartupMessages(library(pheatmap))
+suppressPackageStartupMessages(library(qusage))
+suppressPackageStartupMessages(library(rtracklayer))
+```
+## Quality Control  
+
+Quality control and preprocessing of FASTQ files are done using [fastp](https://github.com/OpenGene/fastp). The separate reports of quality control are pooled using [MultiQC](https://multiqc.info/).  
+
+```{r Quality Control,fig.height = 8,fig.width = 12,include = TRUE,echo=FALSE,message = FALSE,warning = FALSE,error=TRUE}
+
+#Citation:  
+#[Shifu Chen, Yanqing Zhou, Yaru Chen, Jia Gu; fastp: an ultra-fast all-in-one FASTQ preprocessor, Bioinformatics, Volume 34, Issue 17, 1 September 2018, Pages i884–i890](https://academic.oup.com/bioinformatics/article/34/17/i884/5093234).  
+
+# Install fastp
+# note: the fastp version in bioconda may be not the latest
+#conda install -c bioconda fastp
+
+#!/bin/bash
+#SBATCH --array=1-13
+#SBATCH -N 1
+#SBATCH -n 2
+#SBATCH --mem 50G
+#SBATCH -t 0-72:00:00
+#SBATCH –p compute
+#SBATCH -q batch
+
+# cd $SLURM_SUBMIT_DIR
+# source /home/yuqzhao/anaconda3/etc/profile.d/conda.sh
+# conda activate Anacondaent3
+# sample=$(cat samples.txt|head -n $SLURM_ARRAY_TASK_ID| tail -1)
+# mkdir -p ../Trimming/
+# fastp -h "$sample".html -j "$sample".json -i "$sample"_R1.fastq.gz -I "$sample"_R2.fastq.gz -o ../Trimming/"$sample"_R1.fastq.gz -O ../Trimming/"$sample"_R2.fastq.gz
+Sequencing_samples<-read.table("m6A-seq_samples.txt",sep = "\t",header = TRUE)
+kbl(Sequencing_samples,caption = "Table 1. Sequencing samples in the study") %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),font_size = 11)
+
+```
+
+![General statistics of QC in  fastp](/Volumes/YZWD/Projects_COH/m6A_seq/IGC-SM-19367__IGC-SM-19366/Processed_Bams/m6A/Fastp_General_Statistics.png)  
+The RNA-seq data is of high duplication.
+The QC results can be found in fastp/multiqc_report.html.  
+  
+## Reads Alignments   
+**HISAT2** is adopted for mapping next-generation sequencing reads to a reference genome.  
+
+```{r Reads Alignments,fig.height = 8,fig.width = 12,include = TRUE,echo=FALSE,message = FALSE,warning = FALSE,error=TRUE}
+
+# Citations:  
+# [Pertea, M., Kim, D., Pertea, G. et al. Transcript-level expression analysis of RNA-seq experiments with HISAT, StringTie and Ballgown. Nat Protoc 11, 1650–1667 (2016).] (https://doi.org/10.1038/nprot.2016.095)  
+
+# The basic steps include:
+# 1) Align clean reads to referecne genome  
+# <span style="color:blue">hisat2 -x referecne_genome -1 Read1 -2 Read2 -S Output.sam</span>.  
+# 2) sorted the alignments in "genome" order  
+# <span style="color:blue">samtools sort -o Output.sorted.bam Output.sam</span>.  
+# 3) Remove duplicate reads  
+# <span style="color:blue">picard MarkDuplicates I=Output.sorted.bam O=Output.sorted.nodup.bam M=Output.metric.txt REMOVE_DUPLICATES=true</span>.  
+# 4) Create index file  
+# <span style="color:blue">samtools index Output.sorted.nodup.bam</span>.    
+
+# Scripts:
+  
+#!/bin/bash
+#SBATCH --array=1-13%5
+#SBATCH -N 1
+#SBATCH -n 4
+#SBATCH --mem 200G
+#SBATCH -t 0-24:00:00
+#SBATCH –p compute
+#SBATCH -q batch
+#cd $SLURM_SUBMIT_DIR
+#sample=$(cat samples.txt|head -n $SLURM_ARRAY_TASK_ID| tail -1)
+#source ~/anaconda3/etc/profile.d/conda.sh
+#conda activate Anacondaent3
+#module load HISAT2/2.1.0-foss-2017a
+#module load picard/2.21.1
+#module load samtools/1.6
+#fastq-dump.2.9.2 --split-files $sample
+#GENOME_Index="/home/yuqzhao/GENCODE_Human/Mouse/GRCm39"
+#
+#fastp -i "$sample".fastq -o "$sample"_fastp.fastq -f 5 -t 6
+#Read=./"$sample"_fastp.fastq
+#Read1=./"$sample"_R1.fastq.gz
+#Read2=./"$sample"_R2.fastq.gz
+#hisat2 -p 4 -x $GENOME_Index -U $Read -S "$sample".sam
+#hisat2 -p 4 -x $GENOME_Index -1 $Read1 -2 $Read2 -S "$sample".sam
+#samtools sort -@ 4 -o "$sample".sorted.bam "$sample".sam
+
+#java -jar /opt/picard/2.21.1/picard.jar MarkDuplicates I="$sample".sorted.bam O="$sample".sorted.nodup.bam M="$sample".
+#metric.txt REMOVE_DUPLICATES=true
+#samtools index "$sample".sorted.nodup.bam
+
+#rm "$sample".sam
+#rm "$sample".sorted.bam
+
+
+
+# The Reads Alignments outputs includes:  
+# 1) bam files without duplicates (*.sorted.nodup.bam),  
+#2) index files (*.sorted.nodup.bam.bai). 
+
+ggplot(Sequencing_samples, aes(fill=Treatments, y=AlignmentRates, x=Samples)) + 
+  geom_bar(position="dodge", stat="identity") + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+
+
+```
+  
+## Epitranscriptome Analysis by exomePeak  
+The **exomePeak** package is developed for the analysis of affinity-based epitranscriptome shortgun sequencing data from MeRIP-seq (maA-seq).  
+```{r Epitranscriptome Analysis by exomePeak,fig.height = 8,fig.width = 12,include = TRUE,echo=FALSE,message = FALSE,warning = FALSE,error=TRUE}
+library(exomePeak)
+BAM_files<-dir("/Volumes/YZWD/Projects_COH/m6A_seq/IGC-SM-19367__IGC-SM-19366/Processed_Bams/",full.names = TRUE,pattern = ".bam$")
+mm10.ncbiRefSeq.gtf <-"/Volumes/YZWD/Projects_COH/m6A_seq/IGC-SM-19367__IGC-SM-19366/mm10.ncbiRefSeq.gtf"
+# result_WT_vs_Input <- exomepeak(GENE_ANNO_GTF=mm10.ncbiRefSeq.gtf,IP_BAM=BAM_files[1:3],INPUT_BAM=BAM_files[7:9],OUTPUT_DIR = "WT_vs_Input")
+# result_KO_vs_Input <- exomepeak(GENE_ANNO_GTF=mm10.ncbiRefSeq.gtf,IP_BAM=BAM_files[4:6],INPUT_BAM=BAM_files[10:12],OUTPUT_DIR = "KO_vs_Input")
+# result_KO_vs_WT <- exomepeak(GENE_ANNO_GTF=mm10.ncbiRefSeq.gtf,IP_BAM=BAM_files[1:3],INPUT_BAM=BAM_files[7:9],TREATED_IP_BAM=BAM_files[4:6],TREATED_INPUT_BAM=BAM_files[10:12],OUTPUT_DIR = "exomePeak_KOvsWT")
+
+```
+  
+## Peak Annotation  
+The **ChIPseeker** implements functions to retrieve the nearest genes around the peak, annotate genomic region of the peak, statstical methods for estimate the significance of overlap among ChIP peak data sets, and incorporate GEO database for user to compare the own dataset with those deposited in database.  
+```{r Peak Annotation,fig.height = 8,fig.width = 12,include = TRUE,echo=FALSE,message = FALSE,warning = FALSE,error=TRUE}
+#Mouse Genome Annotations
+suppressPackageStartupMessages(library(TxDb.Mmusculus.UCSC.mm10.knownGene))
+#Human Genome Annotations
+#suppressPackageStartupMessages(library(TxDb.Hsapiens.UCSC.hg19.knownGene))
+txdb <- TxDb.Mmusculus.UCSC.mm10.knownGene
+
+peak<-readPeakFile("/Volumes/YZWD/Projects_COH/m6A_seq/IGC-SM-19367__IGC-SM-19366/Processed_Bams/m6A/exomePeak_KOvsWT/sig_diff_peak.bed")
+# After peak calling, we would like to know the peak locations over the whole genome,
+# covplot function calculates the coverage of peak regions over chromosomes and generate a figure to visualize.
+# GRangesList is also supported and can be used to compare coverage of multiple bed files.
+```
+Peaks coverage plot  
+```{r,fig.height = 8,fig.width = 12,include = TRUE,echo=FALSE,message = FALSE,warning = FALSE,error=TRUE}
+covplot(peak, chrs=c("chr1", "chr2","chr3","chr4","chr5","chr6","chr7","chr8","chr9","chr10"))
+```
+Profile of ChIP peaks binding to TSS regions  
+```{r,fig.height = 8,fig.width = 12,include = TRUE,echo=FALSE,message = FALSE,warning = FALSE,error=TRUE}
+
+# Profile of ChIP peaks binding to TSS regions
+promoter <- getPromoters(TxDb=txdb, upstream=3000, downstream=3000)
+tagMatrix <- getTagMatrix(peak, windows=promoter)
+tagHeatmap(tagMatrix, xlim=c(-3000, 3000), color="red")
+#peakHeatmap(files[[4]], TxDb=txdb, upstream=3000, downstream=3000, color="red")
+#Average Profile of ChIP peaks binding to TSS region
+```
+  
+Average Profile of ChIP peaks binding to TSS region  
+```{r,fig.height = 8,fig.width = 12,include = TRUE,echo=FALSE,message = FALSE,warning = FALSE,error=TRUE}
+
+plotAvgProf(tagMatrix, xlim=c(-3000, 3000),xlab="Genomic Region (5'->3')", ylab = "Read Count Frequency")
+```
+  
+Confidence interval estimated by bootstrap method is also supported for characterizing ChIP binding profiles.  
+```{r,fig.height = 8,fig.width = 12,include = TRUE,echo=FALSE,message = FALSE,warning = FALSE,error=TRUE}
+plotAvgProf(tagMatrix, xlim=c(-3000, 3000), conf = 0.95, resample = 1000)
+```
+# Peak Annotation  
+
+```{r,fig.height = 8,fig.width = 12,include = TRUE,echo=FALSE,message = FALSE,warning = FALSE,error=TRUE}
+peakAnno <- annotatePeak(peak = peak, tssRegion=c(-3000, 3000),TxDb=txdb, annoDb="org.Mm.eg.db")
+#Visualize Genomic Annotation
+```
+Pie plot of the genomic annotation.  
+
+```{r,fig.height = 8,fig.width = 12,include = TRUE,echo=FALSE,message = FALSE,warning = FALSE,error=TRUE}
+
+plotAnnoPie(peakAnno)
+```
+Bar plot of the genomic annotation.  
+```{r,fig.height = 8,fig.width = 12,include = TRUE,echo=FALSE,message = FALSE,warning = FALSE,error=TRUE}
+
+plotAnnoBar(peakAnno)
+```
+Vennpie plot of the genomic annotation.  
+```{r,fig.height = 8,fig.width = 12,include = TRUE,echo=FALSE,message = FALSE,warning = FALSE,error=TRUE}
+
+vennpie(peakAnno)
+```
+Combine vennpie with upsetplot.  
+```{r,fig.height = 8,fig.width = 12,include = TRUE,echo=FALSE,message = FALSE,warning = FALSE,error=TRUE}
+
+upsetplot(peakAnno, vennpie=TRUE)
+```
+Visualize distribution of TF-binding loci relative to TSS
+```{r,fig.height = 8,fig.width = 12,include = TRUE,echo=FALSE,message = FALSE,warning = FALSE,error=TRUE}
+
+plotDistToTSS(peakAnno,title="Distribution of transcription factor-binding loci\nrelative to TSS")
+```
+Functional enrichment analysis
+```{r,fig.height = 8,fig.width = 12,include = TRUE,echo=FALSE,message = FALSE,warning = FALSE,error=TRUE}
+
+pathway1 <- enrichPathway(as.data.frame(peakAnno)$geneId,organism = "mouse")
+head(pathway1, 2)
+gene <- seq2gene(peak, tssRegion = c(-1000, 1000), flankDistance = 3000, TxDb=txdb)
+pathway2 <- enrichPathway(gene,organism = "mouse")
+head(pathway2, 2)
+dotplot(pathway2)
+
+```
+  
+## HOMER Motif Enrichment of Peaks  
+HOMER (Hypergeometric Optimization of Motif EnRichment) is a suite of tools for Motif Discovery and next-gen sequencing analysis.  
+![HOMER Motif Enrichment Summary](/Volumes/YZWD/Projects_COH/m6A_seq/IGC-SM-19367__IGC-SM-19366/Processed_Bams/m6A/Homer_MotifOutput.png)
+The Output can be found in Homer_MotifOutput/homerResults.html.  
+```{r HOMER Motif Enrichment of Peaks,fig.height=8,fig.width=12,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE,error=FALSE}
+#shiny::includeHTML("/Volumes/YZWD/Projects_COH/m6A_seq/IGC-SM-19367__IGC-SM-19366/Processed_Bams/m6A/Homer_MotifOutput/homerResults.html")
+```
+  
+## RcisTarget Motif Enrichment  
+RcisTarget: Identify transcription factor binding motifs enriched on a gene list.  
+RcisTarget identifies transcription factor binding motifs (TFBS) over-represented on a gene list. In a first step, RcisTarget selects DNA motifs that are significantly over-represented in the surroundings of the transcription start site (TSS) of the genes in the gene-set.  
+This is achieved by using a database that contains genome-wide cross-species rankings for each motif. The motifs that are then annotated to TFs and those that have a high Normalized Enrichment Score (NES) are retained.  
+Finally, for each motif and gene-set, RcisTarget predicts the candidate target genes (i.e. genes in the gene-set that are ranked above the leading edge).  
+
+```{r RcisTarget Motif Enrichment,fig.height=8,fig.width=12,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE,error=FALSE}
+
+library("RcisTarget")
+# Transcription factor binding motif enrichment
+sig_diff_peak<-read.table("exomePeak_KOvsWT/sig_diff_peak.bed",header = FALSE,sep = "\t")
+data("motifAnnotations_mgi")
+geneLists <- list(geneListName=unique(sig_diff_peak$V4))
+motifRankings <- importRankings("mm10__refseq-r80__10kb_up_and_down_tss.mc9nr.feather")
+# Motif enrichment analysis:
+motifEnrichmentTable_wGenes <- cisTarget(geneLists, motifRankings,motifAnnot=motifAnnotations_mgi,verbose=FALSE)
+motifEnrichmentTable_wGenes_wLogo <- addLogo(motifEnrichmentTable_wGenes)
+resultsSubset <- motifEnrichmentTable_wGenes_wLogo[1:5,]
+library(DT)
+datatable(resultsSubset[,-c("enrichedGenes", "TF_lowConf"), with=FALSE],
+escape = FALSE, # To show the logo
+filter="top", options=list(pageLength=5))
+```
+  
+## Transcriptome Assembly  
+**StringTie** is adopted for fast and highly efficient assembly of RNA-Seq alignments into potential transcripts.  
+**Ballgown** is applied to facilitate flexible differential expression analysis of RNA-seq data.  
+The normalization in **DESeq2** is included in the RNA-seq analysis.  
+```{r Transcriptome Assembly,fig.height = 8,fig.width = 12,include = TRUE,echo=FALSE,message = FALSE,warning = FALSE,error=TRUE}
+# Citations:  
+# [Pertea, M., Kim, D., Pertea, G. et al. Transcript-level expression analysis of RNA-seq experiments with HISAT, StringTie and Ballgown. Nat Protoc 11, 1650–1667 (2016).] (https://doi.org/10.1038/nprot.2016.095)
+
+#!/bin/bash
+#SBATCH --array=1-13%5
+#SBATCH -N 1
+#SBATCH -n 2
+#SBATCH --mem 20G
+#SBATCH -t 0-24:00:00
+#SBATCH –p compute
+#SBATCH -q batch
+#cd $SLURM_SUBMIT_DIR
+#module load stringtie
+#mkdir -p ballgown
+#sample=$(cat samples.txt|head -n $SLURM_ARRAY_TASK_ID| tail -1)
+#stringtie -e -B -p 2 -G /net/isi-dcnl/ifs/user_data/Seq/Yuqi_Projects/CCLE/RNA_seq/gencode.v36.annotation.gtf -o ballgown/$sample/"$sample".gtf "$sample".sorted.nodup.bam
+
+# Main Outputs
+# 1) Stringtie's main output is a GTF file containing the assembled transcripts  
+# 2) Gene abundances in tab-delimited format  
+# 3) Fully covered transcripts that match the reference annotation, in GTF format  
+# 4) Files (tables) required as input to Ballgown, which uses them to estimate differential expression  
+# 5) In merge mode, a merged GTF file from a set of GTF files  
+# 
+#  
+# **prepDE.py** derives hypothetical read counts for each transcript from the coverage values estimated by **StringTie** for each transcript, by using this simple formula: reads_per_transcript = coverage * transcript_len / read_len  
+# The format of gtf_files.txt should be:
+# Sample1 Path_to_sample1_gtf  
+# Sample2 Path_to_sample2_gtf  
+# ...
+#   
+# <span style="color:blue">python prepDE.py3 -i gtf_files.txt</span>.  
+#   
+# generates two CSV files containing the count matrices for genes and transcripts.  
+# 
+mm10_gtf_df<-data.frame(import("/Volumes/YZWD/Projects_COH/m6A_seq/IGC-SM-19367__IGC-SM-19366/Processed_Bams/mm10.ncbiRefSeq.gtf"))
+transcript2genes<-mm10_gtf_df %>% filter(type=="transcript") %>% dplyr::select(gene_name,transcript_id)
+countData_Gene <- as.matrix(read.csv("gene_count_matrix.csv", row.names="gene_id"))
+rownames(countData_Gene)<-gsub("\\|.*","",rownames(countData_Gene))
+countData_Transcript <- as.matrix(read.csv("transcript_count_matrix.csv", row.names="transcript_id"))
+#rownames(countData_Transcript)<-gsub("\\..*","",rownames(countData_Transcript))
+colData <- read.csv("Groups.csv", sep=",", row.names=1)
+#colData$groups<-as.factor(colData$groups)
+#all(rownames(colData) %in% colnames(countData_Gene))
+#all(rownames(colData) %in% colnames(countData_Transcript))
+countData_Gene <- countData_Gene[, rownames(colData)]
+countData_Transcript <- countData_Transcript[, rownames(colData)]
+#all(rownames(colData) == colnames(countData_Gene))
+#all(rownames(colData) == colnames(countData_Transcript))
+countData_Transcript <- countData_Transcript[transcript2genes$transcript_id,]
+rownames(countData_Transcript)<-paste0(transcript2genes$gene_name,"_",transcript2genes$transcript_id)
+countData_Gene<-countData_Gene[rowSums(countData_Gene>0)>=1,]
+countData_Transcript<-countData_Transcript[rowSums(countData_Transcript>0)>=1,]
+dds_Gene<-DESeqDataSetFromMatrix(countData = countData_Gene, colData = colData, design = ~ groups)
+dds_Gene <- estimateSizeFactors(dds_Gene)
+# sizeFactors(dds_Gene)
+normalized_counts_Gene <- counts(dds_Gene, normalized=TRUE)
+dds_Transcript<-DESeqDataSetFromMatrix(countData = countData_Transcript, colData = colData, design = ~ groups)
+dds_Transcript <- estimateSizeFactors(dds_Transcript)
+# sizeFactors(dds_Transcript)
+normalized_counts_Transcript <- counts(dds_Transcript, normalized=TRUE)
+col_groups<-colData$groups
+col_groups[col_groups=="WT_IP"]="darkblue"
+col_groups[col_groups=="KO_IP"]="darkred"
+col_groups[col_groups=="WT_input"]="lightblue"
+col_groups[col_groups=="KO_input"]="red"
+# Distribution of normalized reads counts in genes/transcripts across all samples
+cat("Distribution of normalized reads counts in genes across all samples")
+boxplot(log2(normalized_counts_Gene+1),col=col_groups,las=2,ylab='log2(Normalized_Counts+1)')
+cat("Distribution of normalized reads counts in transcripts across all samples")
+boxplot(log2(normalized_counts_Transcript+1),col=col_groups,las=2,ylab='log2(Normalized_Counts+1)')
+pheatmap_color<-data.frame(row.names=rownames(colData), Group=colData$groups)
+cat("Heatmap of Whole Gene Expression Profiles")
+pheatmap::pheatmap(log2(normalized_counts_Gene+1),scale = "none",angle_col = 45,fontsize = 8,cluster_rows = FALSE,cluster_cols = TRUE,show_rownames = FALSE,annotation_col = pheatmap_color)
+cat("Heatmap of Whole Transcript Expression Profiles")
+pheatmap::pheatmap(log2(normalized_counts_Transcript+1),scale = "none",angle_col = 45,fontsize = 8,cluster_rows = FALSE,cluster_cols = TRUE,show_rownames = FALSE,annotation_col = pheatmap_color)
+
+```
+ 
+## MDS & PCA  
+Multidimensional scaling (MDS) and principal component analysis (PCA) simplify the complexity in high-dimensional data while retaining trends and patterns. 
+
+```{r MDS & PCA,fig.height = 8,fig.width = 12,include = TRUE,echo=FALSE,message = FALSE,warning = FALSE,error=TRUE}
+# Input the phenotype informartion (treatments, gender, age, etc.) with format as follows:
+# ids,groups
+# Sample1,Control
+# Sample2,test
+# ...
+# PCA reduces data by geometrically projecting them onto lower dimensions called principal components (PCs), with the goal of finding the best summary of the data using a limited number of PCs.  
+# This task can be used to get an impression on the similarity of RNA-seq samples, i.e. to identify subgroups or outliers.  
+
+# The input should be samples (rows) x genes (columns)
+
+t_normalized_counts_Gene<-as.data.frame(t(normalized_counts_Gene))
+t_normalized_counts_Transcript<-as.data.frame(t(normalized_counts_Transcript))
+# MDS
+cat("MDS Graph of individual RNA-seq samples")
+mds_Gene <- t_normalized_counts_Gene %>% dist() %>% cmdscale() %>% as_tibble()
+colnames(mds_Gene) <- c("Dim.1", "Dim.2")
+mds_Gene$groups<-colData$groups
+mds_p1<-ggscatter(mds_Gene,title = "MDS by Gene",x = "Dim.1", y = "Dim.2", color = "groups",label = rownames(t_normalized_counts_Gene),palette = "jco",size = 2, ellipse = TRUE,ellipse.type = "convex",repel = TRUE)
+mds_Transcript <- t_normalized_counts_Transcript %>% dist() %>% cmdscale() %>% as_tibble()
+colnames(mds_Transcript) <- c("Dim.1", "Dim.2")
+mds_Transcript$groups<-colData$groups
+mds_p2<-ggscatter(mds_Transcript,title = "MDS by Transcript", x = "Dim.1", y = "Dim.2", color = "groups",label = rownames(t_normalized_counts_Transcript),palette = "jco",size = 2, ellipse = TRUE,ellipse.type = "convex",repel = TRUE)
+plot_grid(mds_p1,mds_p2,labels = c("A","B"))
+# PCA
+PCA_Transcript_Results<-prcomp(t_normalized_counts_Transcript)
+#cat("Plot the eigenvalues/variances against the number of dimensions.")
+#fviz_eig(PCA_Transcript_Results)
+cat("PCA Graph of individual RNA-seq samples")
+pca_transcript<-fviz_pca_ind(PCA_Transcript_Results,habillage = colData$groups,addEllipses=TRUE, repel = TRUE,ellipse.type = "confidence",palette = c("#02d85f","#ab4b52","#7788aa","#ffd728"),title ="PCA by Transcripts")
+PCA_Gene_Results<-prcomp(t_normalized_counts_Gene)
+#fviz_eig(PCA_Gene_Results)
+pca_gene<-fviz_pca_ind(PCA_Gene_Results,habillage = colData$groups,addEllipses=TRUE, repel = TRUE,ellipse.type = "confidence",palette = c("#02d85f","#ab4b52","#7788aa","#ffd728"),title ="PCA by Genes")
+# put the PCA plots by genes/transcripts into one figure
+plot_grid(pca_transcript,pca_gene,labels = c("A","B"))
+
+```
+  
+
+## Differential Gene Expression Analysis  
+After MDS/PCA, the outliers will be removed from the following analysis.  
+DESeq2/ballgown are used for analyzing differential expression, which take as input a matrix of read counts mapped to particular genomic features (e.g., genes). 
+
+```{r Differential Gene Expression Analysis,fig.height = 8,fig.width = 12,include = TRUE,echo=FALSE,message = FALSE,warning = FALSE,error=TRUE}
+#Outlier_samples<-c("COHP_44188","COHP_44190")
+#Samples_IP<-c("COHP_44188","COHP_44190")
+Samples_IP<-c("COHP_44422","COHP_44423","COHP_44424","COHP_44425","COHP_44426","COHP_44427")
+pheno_data_filter<-colData %>% filter(rownames(colData) %in% Samples_IP)
+pheno_data_filter$groups<-gsub("WT_","Control_",pheno_data_filter$groups)
+countData_Gene_filter<-countData_Gene[,(colnames(countData_Gene) %in% Samples_IP)]
+countData_Transcript_filter<-countData_Transcript[,(colnames(countData_Transcript) %in% Samples_IP)]
+dds_Gene<-DESeqDataSetFromMatrix(countData = countData_Gene_filter, colData = pheno_data_filter, design = ~ groups)
+dds_Gene <- estimateSizeFactors(dds_Gene)
+normalized_counts_Gene <- counts(dds_Gene, normalized=TRUE)
+dds_Transcript<-DESeqDataSetFromMatrix(countData = countData_Transcript_filter, colData = pheno_data_filter, design = ~ groups)
+Average_Norm_Counts_Gene<-data.frame(Average_Norm_Counts_Control=log2(rowMeans(normalized_counts_Gene[,rownames(pheno_data_filter)[pheno_data_filter$groups=="Control_IP"]])+1),Average_Norm_Counts_KO=log2(rowMeans(normalized_counts_Gene[,rownames(pheno_data_filter)[pheno_data_filter$groups=="KO_IP"]])+1))
+dds_Transcript <- estimateSizeFactors(dds_Transcript)
+normalized_counts_Transcript <- counts(dds_Transcript, normalized=TRUE)
+Average_Norm_Counts_Transcript<-data.frame(Average_Norm_Counts_Control=log2(rowMeans(normalized_counts_Transcript[,rownames(pheno_data_filter)[pheno_data_filter$groups=="Control_IP"]])+1),Average_Norm_Counts_KO=log2(rowMeans(normalized_counts_Transcript[,rownames(pheno_data_filter)[pheno_data_filter$groups=="KO_IP"]])+1))
+dds_Gene <- DESeq(dds_Gene)
+dds_Transcript <- DESeq(dds_Transcript)
+res_Gene <- results(dds_Gene)
+res_Transcript <- results(dds_Transcript)
+res_Gene_df <- data.frame(res_Gene)
+res_Gene_df$Gene_Name<-rownames(res_Gene_df)
+res_Gene_df<-merge(res_Gene_df, Average_Norm_Counts_Gene, by=0, all=TRUE)
+res_Gene_df<-res_Gene_df[order(res_Gene_df$padj), ]
+rownames(res_Gene_df)<-res_Gene_df$Row.names
+res_Gene_df<-res_Gene_df[,c(8,9,10,3:7)]
+write.table(res_Gene_df,file = "Differentially_Expressed_Genes_RNA_seq.txt",sep = "\t",col.names = TRUE,row.names = FALSE,quote = FALSE)
+res_Transcript_df <- data.frame(res_Transcript)
+res_Transcript_df$Transcript_Name<-rownames(res_Transcript_df)
+res_Transcript_df<-merge(res_Transcript_df, Average_Norm_Counts_Transcript, by=0, all=TRUE)
+res_Transcript_df<-res_Transcript_df[order(res_Transcript_df$padj), ]
+rownames(res_Transcript_df)<-res_Transcript_df$Row.names
+res_Transcript_df<-res_Transcript_df[,c(8,9,10,3:7)]
+write.table(res_Transcript_df,file = "Differentially_Expressed_Transcripts_RNA_seq.txt",sep = "\t",col.names = TRUE,row.names = FALSE,quote = FALSE)
+cat("Volcano plot of differentially expression analysis in genes")
+EnhancedVolcano(res_Gene_df,lab = rownames(res_Gene_df),x = 'log2FoldChange',y = 'pvalue',FCcutoff = 1.1,pointSize = 1,pCutoff = 0.01)
+cat("Volcano plot of differentially expression analysis in transcripts")
+EnhancedVolcano(res_Transcript_df,lab = rownames(res_Transcript_df),x = 'log2FoldChange',y = 'pvalue',FCcutoff = 1.1,pointSize = 1,pCutoff = 0.01,labSize = 3)
+
+anno<-data.frame(row.names=rownames(pheno_data_filter), Group=pheno_data_filter$groups)
+Sig_res_Gene_df<-res_Gene_df %>% filter(pvalue<0.01)
+Sig_res_Transcript_df<-res_Transcript_df %>% filter(pvalue<0.01)
+cat("Heatmap of Top 50 differentially expressed genes")
+pheatmap::pheatmap(normalized_counts_Gene[rownames(Sig_res_Gene_df)[1:50],],scale = "row",annotation_col = anno,angle_col = 45,fontsize = 8)
+kbl(Sig_res_Gene_df[1:50,],caption = "Table2. Top 50 differentially expressed genes") %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),font_size = 11)
+cat("Heatmap of Top 50 differentially expressed transcripts")
+pheatmap::pheatmap(normalized_counts_Transcript[rownames(Sig_res_Transcript_df)[1:50],],scale = "row",annotation_col = anno,angle_col = 45,fontsize = 8)
+kbl(Sig_res_Transcript_df[1:50,],caption = "Table3. Top 50 differentially expressed transcripts") %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),font_size = 11)
+
+```
+
+## Pathway Enrichment  
+Differentially expressed genes detected above need to be further analyzed for their collective functions in order to extract new knowledge. **enrichR** is applied for the analysis.  
+
+```{r Pathway Enrichment,fig.height=10,fig.width=12,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE}
+# Canonical pathways are selected
+# dbs <- c("KEGG_2019_Human", "Reactome_2016", "BioCarta_2016")
+dbs <- c("KEGG_2019_Mouse", "Reactome_2016", "BioCarta_2016")
+
+DEGs_pvalue001 <- res_Gene_df %>% filter(pvalue<0.01)
+
+enriched <- enrichr(DEGs_pvalue001$Gene_Name, dbs)
+enriched$KEGG_2019_Mouse <- enriched$KEGG_2019_Mouse %>% filter(P.value<0.05)
+enriched$Reactome_2016 <- enriched$Reactome_2016 %>% filter(P.value<0.05)
+enriched$BioCarta_2016 <- enriched$BioCarta_2016 %>% filter(P.value<0.05)
+cat("Enrichment analysis of gene markers by Enrichr with canonical pathways")
+plotEnrich(enriched[[1]], showTerms = 20, numChar = 40, y = "Count", orderBy = "P.value",title = "Enrichment analysis of gene markers in KEGG by Enrichr")
+#plotEnrich(enriched[[2]], showTerms = 20, numChar = 40, y = "Count", orderBy = "P.value",title = "Enrichment analysis of gene markers in Reactome by Enrichr")
+#plotEnrich(enriched[[3]], showTerms = 20, numChar = 40, y = "Count", orderBy = "P.value",title = "Enrichment analysis of gene markers in BioCarta by Enrichr")
+#save.image("RNA_seq_Analysis_Results.RData")
+```
+
+## GSEA (Gene Set Enrichment Analysis)  
+
+The package **fgsea** implements an algorithm for fast gene set enrichment analysis.  
+
+
+```{r GSEA (Gene Set Enrichment Analysis),fig.height=10,fig.width=12,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE}
+# Citation:
+#[Korotkevich G, Sukhov V, Sergushichev A (2019). “Fast gene set enrichment analysis.” bioRxiv. doi: 10.1101/060012.](http://biorxiv.org/content/early/2016/06/20/060012)  
+MSigDB_C2<-msigdbr(species = "mouse", category = "C2")
+MSigDB_H<-msigdbr(species = "mouse", category = "H")
+gene_sets_canonical<-MSigDB_C2 %>% filter(gs_subcat %in% c("CP:KEGG","CP:BIOCARTA","CP:REACTOME")) %>% dplyr::select(gs_name,gene_symbol)
+gene_sets_hallmarks<-MSigDB_H %>% dplyr::select(gs_name,gene_symbol)
+Pathway_List <- function(data_frame) {
+  unique_pathways<-unique(data_frame$gs_name)
+  Pathway_List<-list()
+  for(i in 1:length(unique_pathways)){
+    Pathway_List[[unique_pathways[i]]]<-data_frame$gene_symbol[data_frame$gs_name==unique_pathways[i]]
+    
+  }
+  return(Pathway_List)
+}
+Canonical_pathway_list<-Pathway_List(gene_sets_canonical)
+Hallmarks_pathway_list<-Pathway_List(gene_sets_hallmarks)
+GeneRanks<-res_Gene_df$log2FoldChange
+names(GeneRanks)<-res_Gene_df$Gene_Name
+#GeneRanks <- sort(GeneRanks, decreasing = TRUE)
+
+cat("GSEA against KEGG, Reactome, ans Biocarta canonical pathways")
+fgseaRes_canonical <- fgseaMultilevel(pathways = Canonical_pathway_list,stats = GeneRanks,minSize=10,maxSize=1000,eps = 1e-30)
+fgseaRes_canonical<-fgseaRes_canonical[order(pval), ]
+fgseaRes_canonical_Sig<-fgseaRes_canonical %>% filter(pval<0.01)
+fgseaRes_canonical_Sig$pathway<-gsub("BIOCARTA_|REACTOME_|KEGG_","",fgseaRes_canonical_Sig$pathway)
+fgseaRes_canonical_Sig$pathway<-strtrim(fgseaRes_canonical_Sig$pathway,30)
+fgseaRes_canonical_Sig$No_of_Significant_Genes<-lengths(fgseaRes_canonical_Sig$leadingEdge)
+ggplot(fgseaRes_canonical_Sig, aes(x=NES, y=pathway, size=No_of_Significant_Genes,color=pval)) + geom_point()+scale_size_area(max_size = 10)+scale_colour_gradient(low="blue",high="red")
+#topPathwaysUp <- fgseaRes[ES > 0][head(order(pval), n=10), pathway]
+#topPathwaysDown <- fgseaRes[ES < 0][head(order(pval), n=10), pathway]
+#topPathways <- c(topPathwaysUp, rev(topPathwaysDown))
+#cat(" Table plot for top perturbedpathways:")
+#plotGseaTable(Canonical_pathway_list[topPathways], GeneRanks, fgseaRes, 
+#              gseaParam=0.5)
+#cat(" GSEA plot of top up-regulated pathways:")
+#for (i in 1:5) {
+#  P1<-plotEnrichment(Canonical_pathway_list[[topPathwaysUp[i]]],GeneRanks) + labs(title=topPathwaysUp[i])
+#  print(P1)
+#}
+
+#cat(" GSEA plot of down-regulated pathways:")
+#for (j in 1:5) {
+#  P2<-plotEnrichment(Canonical_pathway_list[[topPathwaysDown[j]]], GeneRanks) + labs(title=topPathwaysDown[j])
+#  print(P2)
+#}
+cat("GSEA against Hallmarks in MSigDB")
+fgseaRes_hallmarks <- fgseaMultilevel(pathways = Hallmarks_pathway_list,stats = GeneRanks,minSize=5,maxSize=2000,eps = 1e-60)
+fgseaRes_hallmarks<-fgseaRes_hallmarks[order(pval), ]
+fgseaRes_hallmarks_Sig<-fgseaRes_hallmarks %>% filter(pval<0.05)
+fgseaRes_hallmarks_Sig$pathway<-gsub("HALLMARK_","",fgseaRes_hallmarks_Sig$pathway)
+fgseaRes_hallmarks_Sig$pathway<-strtrim(fgseaRes_hallmarks_Sig$pathway,30)
+fgseaRes_hallmarks_Sig$No_of_Significant_Genes<-lengths(fgseaRes_hallmarks_Sig$leadingEdge)
+ggplot(fgseaRes_hallmarks_Sig, aes(x=NES, y=pathway, size=No_of_Significant_Genes,color=pval)) + geom_point()+scale_size_area(max_size = 10)+scale_colour_gradient(low="blue",high="red")
+```
+
+## Save Results  
+The Figures and Tables will be automatically saved.   
+```{r Save Results,fig.height=8,fig.width=12,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE}
+save.image("m6A_seq_Analysis_Results.RData")
+```

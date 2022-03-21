@@ -1,0 +1,273 @@
+---
+title: "scRNA-seq Analysis of Mouse pSTAT3-KnockOut Model"
+author: 
+- Yuqi Zhao, Ph.D
+- Wei Cheng, Ph.D
+- Xiwei Wu, MD, Ph.D
+- 
+- Integrative Genomics Core (IGC), City Of Hope
+- 
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    code_folding: hide
+    toc: yes
+    toc_float: yes
+    keep_md: yes
+  pdf_document:
+    toc: yes
+---
+```{r setup, include=FALSE,echo=FALSE,message = FALSE,warning = FALSE,error=TRUE}
+###########################################################
+## Load libraries
+## 1. Install seurat
+# install.packages("remotes")
+# library("remotes")
+# remotes::install_github("satijalab/seurat", ref = "release/4.0.0")
+## 2. install devtools and install scCATCH
+# devtools::install_github('ZJUFanLab/scCATCH')
+## 3. Install SingleR from source
+# install.packages("~/Downloads/SingleR_1.4.1.tgz",repos = NULL,type = "source")
+## 4. Install celldex
+# install.packages("~/Downloads/celldex_1.0.0.tar.gz",repos = NULL,type = "source"
+# The RMarkDown can be turned into R script
+# knitr::purl("Seurat_scRNA_seq_Analysis.Rmd")
+## 5. Install SCENIC
+# remotes::install_github("aertslab/SCENIC")
+#BiocManager::install(c("zoo", "mixtools", "rbokeh","DT", "NMF", "ComplexHeatmap", "R2HTML", "Rtsne","doMC", "doRNG"))
+## Install DoubletFinder
+# devtools::install_github("chris-mcginnis-ucsf/DoubletFinder")
+## Install enrichR
+#install.packages("enrichR")
+##########################################################
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(Seurat))
+suppressMessages(library(scRepertoire))
+suppressPackageStartupMessages(library(cowplot))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(kableExtra))
+theme_set(theme_cowplot())
+setwd("/Users/yuqizhao/Projects/IGC-3817/IGC-3817/VDJ/")
+folder_name <- paste0("scVDJ_seq_Analysis","_",Sys.Date())
+dir.create(path = folder_name,recursive = TRUE)
+```
+## TCR_BCR_Repertoire  
+
+*scRepertoire* is designed to take filter contig outputs from the 10x Genomics Cell Ranger pipeline, processes that data to assign clonotype based on two TCR or Ig chains, and analyze the clonotype dynamics.  
+Citations:  
+[Borcherding N (2021). scRepertoire: A toolkit for single-cell immune receptor profiling. R package version 1.2.0.](https://bioconductor.org/packages/release/bioc/html/scRepertoire.html)  
+```{r TCR_BCR_Repertoire,fig.height=8,fig.width=12,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE,error=FALSE}
+
+
+# TCR
+vdj_Project_COHP_44898<-read.csv("vdj_Project_COHP_44898/filtered_contig_annotations.csv")
+vdj_Project_COHP_44899<-read.csv("vdj_Project_COHP_44899/filtered_contig_annotations.csv")
+vdj_Project_COHP_44900<-read.csv("vdj_Project_COHP_44900/filtered_contig_annotations.csv")
+# If Multiplexed Experiment
+#for (i in seq_along(contig_TCR_list)) {
+#  contig_TCR_list[[i]] <- stripBarcode(contig_TCR_list[[i]], column = 1, connector = "-", num_connects = 1)
+#}
+
+vdj_Project_COHP_44898[vdj_Project_COHP_44898==""]="None"
+vdj_Project_COHP_44899[vdj_Project_COHP_44899==""]="None"
+vdj_Project_COHP_44900[vdj_Project_COHP_44900==""]="None"
+vdj_Project_COHP_44898[vdj_Project_COHP_44898=="true"]="TRUE"
+vdj_Project_COHP_44899[vdj_Project_COHP_44899=="true"]="TRUE"
+vdj_Project_COHP_44900[vdj_Project_COHP_44900=="true"]="TRUE"
+vdj_Project_COHP_44898$is_cell<-as.logical(vdj_Project_COHP_44898$is_cell)
+vdj_Project_COHP_44898$high_confidence<-as.logical(vdj_Project_COHP_44898$high_confidence)
+vdj_Project_COHP_44898$full_length<-as.logical(vdj_Project_COHP_44898$full_length)
+vdj_Project_COHP_44899$is_cell<-as.logical(vdj_Project_COHP_44899$is_cell)
+vdj_Project_COHP_44899$high_confidence<-as.logical(vdj_Project_COHP_44899$high_confidence)
+vdj_Project_COHP_44899$full_length<-as.logical(vdj_Project_COHP_44899$full_length)
+vdj_Project_COHP_44900$is_cell<-as.logical(vdj_Project_COHP_44900$is_cell)
+vdj_Project_COHP_44900$high_confidence<-as.logical(vdj_Project_COHP_44900$high_confidence)
+vdj_Project_COHP_44900$full_length<-as.logical(vdj_Project_COHP_44900$full_length)
+contig_TCR_list <- list(vdj_Project_COHP_44898,vdj_Project_COHP_44899,vdj_Project_COHP_44900)
+combined_TCR <- combineTCR(contig_TCR_list, samples = c("WT_R1","WT_R2","KO"),ID=NULL,cells ="T-AB")
+
+
+# BCR
+vdj_Project_COHP_44895<-read.csv("vdj_Project_COHP_44895/filtered_contig_annotations.csv")
+vdj_Project_COHP_44896<-read.csv("vdj_Project_COHP_44896/filtered_contig_annotations.csv")
+vdj_Project_COHP_44897<-read.csv("vdj_Project_COHP_44897/filtered_contig_annotations.csv")
+vdj_Project_COHP_44895[vdj_Project_COHP_44895==""]="None"
+vdj_Project_COHP_44896[vdj_Project_COHP_44896==""]="None"
+vdj_Project_COHP_44897[vdj_Project_COHP_44897==""]="None"
+vdj_Project_COHP_44895[vdj_Project_COHP_44895=="true"]="TRUE"
+vdj_Project_COHP_44896[vdj_Project_COHP_44896=="true"]="TRUE"
+vdj_Project_COHP_44897[vdj_Project_COHP_44897=="true"]="TRUE"
+vdj_Project_COHP_44895$is_cell<-as.logical(vdj_Project_COHP_44895$is_cell)
+vdj_Project_COHP_44895$high_confidence<-as.logical(vdj_Project_COHP_44895$high_confidence)
+vdj_Project_COHP_44895$full_length<-as.logical(vdj_Project_COHP_44895$full_length)
+vdj_Project_COHP_44896$is_cell<-as.logical(vdj_Project_COHP_44896$is_cell)
+vdj_Project_COHP_44896$high_confidence<-as.logical(vdj_Project_COHP_44896$high_confidence)
+vdj_Project_COHP_44896$full_length<-as.logical(vdj_Project_COHP_44896$full_length)
+vdj_Project_COHP_44897$is_cell<-as.logical(vdj_Project_COHP_44897$is_cell)
+vdj_Project_COHP_44897$high_confidence<-as.logical(vdj_Project_COHP_44897$high_confidence)
+vdj_Project_COHP_44897$full_length<-as.logical(vdj_Project_COHP_44897$full_length)
+contig_BCR_list <- list(vdj_Project_COHP_44895,vdj_Project_COHP_44896,vdj_Project_COHP_44897)
+combined_BCR <- combineBCR(contig_BCR_list, samples = c("WT_R1","WT_R2","KO"),ID=NULL)
+```
+
+## Quantify Clonotypes  
+quantContig() to return the total or relative numbers of unique clonotypes.  
+
+```{r Quantify Clonotypes,fig.height=8,fig.width=12,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE,error=FALSE}
+cat("Quantify Clonotypes of TCRs")
+quantContig(combined_TCR,cloneCall = "gene+nt",chain = "both", exportTable = T)
+cat("Quantify Clonotypes of BCRs")
+quantContig(combined_BCR,cloneCall = "gene+nt",chain = "both", exportTable = T)
+```
+
+## Clonotype Abundance  
+The relative distribution of clonotypes by abundance is examined.  
+```{r Clonotype Abundance,fig.height=8,fig.width=12,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE,error=FALSE}
+abundanceContig(combined_TCR, cloneCall = "gene", scale = F, exportTable = T)
+abundanceContig(combined_BCR, cloneCall = "gene", scale = F, exportTable = T)
+```
+## Length of Clonotypes  
+The length distribution of the CDR3 sequences is examined.  
+```{r Length of Clonotypes,fig.height=8,fig.width=12,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE,error=FALSE}
+
+P1<-lengthContig(combined_TCR, cloneCall="aa", chain = "both") 
+P2<-lengthContig(combined_TCR, cloneCall="nt", chain = "both")
+cat("Length of Clonotypes in TCRs")
+plot_grid(P1,P2,labels = c("cloneCall by aa","cloneCall by nt"))
+
+P1<-lengthContig(combined_BCR, cloneCall="aa", chain = "both") 
+P2<-lengthContig(combined_BCR, cloneCall="nt", chain = "both")
+cat("Length of Clonotypes in BCRs")
+plot_grid(P1,P2,labels = c("cloneCall by aa","cloneCall by nt"))
+```
+## Compare Clonotypes  
+The clonotypes between samples and changes in dynamics by using the compareClonotypes() function.  
+```{r Compare Clonotypes,fig.height=8,fig.width=12,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE,error=FALSE}
+compareClonotypes(combined_TCR, numbers = 10, samples = c("WT_R1", "WT_R2"), cloneCall="aa", graph = "alluvial",exportTable = FALSE)
+```
+
+## Visualize Gene Usage  
+The relative usage of genes of the TCR or BCR is checked.  
+
+```{r Visualize Gene Usage,fig.height=8,fig.width=12,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE,error=FALSE}
+cat("Gene Usage of V in TRA")
+vizGenes(combined_TCR, gene = "V", chain = "TRA", plot = "bar", order = "variance", scale = TRUE)
+cat("Gene Usage of V in TRB")
+vizGenes(combined_TCR, gene = "V", chain = "TRB", plot = "bar", order = "variance", scale = TRUE)
+```
+
+## Clonal Space Homeostasis  
+By examining the clonal space, we are effectively looking at the relative space occupied by clones at specific proportions.  
+*cloneTypes*  
+* Rare = .0001  
+* Small = .001  
+* Medium = .01  
+* Large = .1  
+* Hyperexpanded = 1  
+```{r Clonal Space Homeostasis,fig.height=8,fig.width=12,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE,error=FALSE}
+cat("Clonal Space Homeostasis by gene")
+clonalHomeostasis(combined_TCR, cloneCall = "gene")
+cat("Clonal Space Homeostasis by aa")
+clonalHomeostasis(combined_TCR, cloneCall = "aa")
+```
+## Clonal Proportion  
+The clonal proportion acts to place clones into separate bins. 
+```{r Clonal Proportion,fig.height=8,fig.width=12,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE,error=FALSE}
+clonalProportion(combined_TCR, cloneCall = "gene+nt") 
+```
+## Overlap Analysis  
+Measures of similarity between the samples loaded into scRepertoire.  
+```{r Overlap Analysis,fig.height=8,fig.width=12,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE,error=FALSE}
+clonalOverlap(combined_TCR, cloneCall = "aa", method = "overlap")
+```
+## Diversity Analysis  
+Diversity can also be measured for samples, using four metrics: 1) Shannon, 2) inverse Simpson, 3) Chao1, and 4) Abundance-based Coverage Estimator (ACE).  
+```{r Diversity Analysis,fig.height=12,fig.width=12,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE,error=FALSE}
+
+clonalDiversity(combined_TCR, cloneCall = "gene+nt", group.by = "sample", n.boots = 100)
+```
+## Scatter Compare  
+organize two samples from the combineTCR/BCR product, count the relative clonotypes, and produce a scatter plot comparing the two samples.  
+```{r Scatter Compare,fig.height=8,fig.width=12,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE,error=FALSE}
+scatterClonotype(combined_TCR, cloneCall ="gene", x.axis = "KO", y.axis = "WT_R1",dot.size = "total",graph = "proportion")
+scatterClonotype(combined_TCR, cloneCall ="gene", x.axis = "KO", y.axis = "WT_R2",dot.size = "total",graph = "proportion")
+```
+## Interacting with Seurat  
+```{r Interacting with Seurat,fig.height=8,fig.width=12,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE,error=FALSE}
+list.receptors<-c(combined_TCR,combined_BCR)
+load("../GEX/Seurat_scRNA_seq_Analysis_2021-09-29/Seurat_scRNA_seq_Analysis_2021-09-29.rds")
+DimPlot(pSTAT3_Pool.combined, label = T,label.size = 3) + NoLegend()
+table(Idents(pSTAT3_Pool.combined))
+#seurat <- combineExpression(list.receptors, pSTAT3_Pool.combined,
+#cloneCall="gene", proportion = TRUE)
+
+seurat <- combineExpression(list.receptors, pSTAT3_Pool.combined, 
+                            cloneCall="gene", group.by = "sample", proportion = FALSE, 
+                            cloneTypes=c(Single=1, Small=5, Medium=20, Large=100, Hyperexpanded=500))
+colorblind_vector <- colorRampPalette(rev(c("#0D0887FF", "#47039FFF", 
+                                            "#7301A8FF", "#9C179EFF", "#BD3786FF", "#D8576BFF",
+                                            "#ED7953FF","#FA9E3BFF", "#FDC926FF", "#F0F921FF")))
+
+DimPlot(seurat, group.by = "Groups") + scale_color_manual(values=colorblind_vector(2))
+slot(seurat, "meta.data")$cloneType <- factor(slot(seurat, "meta.data")$cloneType, 
+                                              levels = c("Hyperexpanded (100 < X <= 500)", 
+                                                         "Large (20 < X <= 100)", 
+                                                         "Medium (5 < X <= 20)", 
+                                                         "Small (1 < X <= 5)", 
+                                                         "Single (0 < X <= 1)", NA))
+DimPlot(seurat, group.by = "cloneType") +
+  scale_color_manual(values = colorblind_vector(5), na.value="grey")
+```
+## clonalOverlay  
+```{r clonalOverlay,fig.height=8,fig.width=12,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE,error=FALSE}
+clonalOverlay(seurat, reduction = "umap", freq.cutpoint = 30, bins = 10, facet = "Groups") + guides(color = FALSE,scale = "None")
+
+seurat <- highlightClonotypes(seurat, cloneCall= "aa", sequence = unique(seurat$CTaa[which(seurat$cloneType=="Hyperexpanded (100 < X <= 500)")]))
+DimPlot(seurat, group.by = "highlight",split.by = "Groups")
+```
+## occupiedscRepertoire  
+```{r occupiedscRepertoire,fig.height=8,fig.width=12,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE,error=FALSE}
+
+occupiedscRepertoire(seurat, x.axis = "cluster",na.include = FALSE,exportTable = TRUE)
+```
+
+## getCirclize  
+```{r getCirclize,fig.height=8,fig.width=12,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE,error=FALSE}
+
+library(circlize)
+library(scales)
+
+circles <- getCirclize(seurat, group.by = "cluster")
+
+#Just assigning the normal colors to each cluster
+grid.cols <- scales::hue_pal()(length(unique(seurat@active.ident)))
+names(grid.cols) <- levels(seurat@active.ident)
+
+#Graphing the chord diagram
+circlize::chordDiagram(circles, self.link = 1, grid.col = grid.cols)
+```
+
+## StartracDiversity  
+```{r StartracDiversity,fig.height=8,fig.width=12,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE,error=FALSE}
+StartracDiversity(seurat, type = "Groups",sample = "Groups", by = "overall")
+```
+
+## Clonotypes after clustering  
+```{r Clonotypes after clustering,fig.height=8,fig.width=12,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE,error=FALSE}
+
+#library(stringr)
+#Cells_scRNA_seq<-Cells(pSTAT3_Pool.combined)
+#Cells_scRNA_seq_df<-str_split_fixed(Cells_scRNA_seq, "_", 2)
+#colnames(Cells_scRNA_seq_df)<-c("Groups","Barcodes")
+combined2 <- expression2List(seurat,split.by =NULL)
+clonalHomeostasis(combined2, cloneCall = "nt",exportTable = TRUE)
+clonalProportion(combined2, cloneCall = "nt")
+clonalOverlap(combined2, cloneCall="aa", method="overlap")
+
+```
+
+## Save Results  
+```{r Save results,fig.height=8,fig.width=12,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE,error=FALSE}
+file_name <- paste0(folder_name,"/","Seurat_scRNA_seq_Analysis","_",Sys.Date(),".RData")
+save.image(file_name)
+```

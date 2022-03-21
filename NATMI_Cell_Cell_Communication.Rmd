@@ -1,0 +1,26 @@
+---
+title: "NATMI for cell-cell communication from scRNA-seq"
+author: "Yuqi Zhao"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    code_folding: hide
+    toc: yes
+    toc_float: yes
+  pdf_document:
+    toc: yes
+---
+
+```{r setup, include=TRUE,echo=FALSE,message = FALSE,warning = FALSE}
+library(reticulate)
+library(Seurat)
+use_python("/usr/local/bin/python3")
+# 
+load("~/Projects/Projects_COH/Single_Cell_Seq/ZJ_Sun_Projects/Seurat_scRNA_seq_Analysis_2021-02-02.rds")
+write.csv(100 * (exp(as.matrix(GetAssayData(object = hMETtg_Pool.combined, assay = "RNA", slot = "data"))) - 1), "em.csv", row.names = T)
+write.csv(Idents(object = hMETtg_Pool.combined),"metadata.csv", row.names = T)
+
+```
+```{python}
+python ~/Projects/Useful_Tools/NATMI/ExtractEdges.py --species mouse --emFile em.csv --annFile metadata.csv --interDB lrc2p --coreNum 4 --out example_hMETtg
+```

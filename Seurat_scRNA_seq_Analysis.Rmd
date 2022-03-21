@@ -1,0 +1,289 @@
+---
+title: "scRNA-seq of hMETtg Mouse Model of Prostate Cancer"
+author: "Yuqi Zhao"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    code_folding: hide
+    toc: yes
+    toc_float: yes
+  pdf_document:
+    toc: yes
+---
+
+
+```{r setup, include=FALSE,echo=FALSE,message = FALSE,warning = FALSE}
+###########################################################
+## Load libraries
+## 1. Install seurat
+# install.packages("remotes")
+# library("remotes")
+# remotes::install_github("satijalab/seurat", ref = "release/4.0.0")
+## 2. install devtools and install scCATCH
+# devtools::install_github('ZJUFanLab/scCATCH')
+##########################################################
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(cowplot)
+library(scCATCH)
+library(ggplot2)
+library(knitr)
+theme_set(theme_cowplot())
+```
+  
+## Loading data
+Read10X function imports CellRanger count output into R as a matrix, then CreateSeuratObject create a seurat object. If more than one sample, they can be pooled into one object.
+
+```{r Loading data,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE}
+setwd("~/Projects/Projects_COH/Single_Cell_Seq/ZJ_Sun_Projects/")
+load("/Users/yuqizhao/Projects/Projects_COH/Single_Cell_Seq/ZJ_Sun_Projects/PC_hMETtg_obj.RDS")
+#WildType1 <- Read10X(data.dir = "~/Projects/Projects_COH/Single_Cell_Seq/ZJ_Sun_Projects/Count_Out_ WT_27347/filtered_feature_bc_matrix/")
+#WildType1_obj<-CreateSeuratObject(counts = WildType1, project = "WT", min.cells = 3, min.features = 200)
+#WildType1_obj
+#WildType2 <- Read10X(data.dir = "~/Projects/Projects_COH/Single_Cell_Seq/ZJ_Sun_Projects/Count_Out_WT_ 36980/filtered_feature_bc_matrix/")
+#WildType2_obj<-CreateSeuratObject(counts = WildType2, project = "WT", min.cells = 3, min.features = 200)
+#WildType2_obj
+#HGF_hMETtg <- Read10X(data.dir = "~/Projects/Projects_COH/Single_Cell_Seq/ZJ_Sun_Projects/Count_Out_HGF_hMETtg_8M/filtered_feature_bc_matrix/")
+#HGF_hMETtg_obj<-CreateSeuratObject(counts = HGF_hMETtg, project = "hMETtg", min.cells = 3, min.features = 200)
+#HGF_hMETtg_obj
+
+# Merge the samples into one object
+
+#PC_hMETtg_obj<-merge(HGF_hMETtg_obj, y = c(WildType1_obj, WildType2_obj), add.cell.ids = c("HGF_hMETtg", "WT1", "WT2"), project = "PC_hMETtg")
+```
+  
+## Quality control
+There are three QC metrics commonly used:  
+1. The number of unique genes detected in each cell.  
+2. the total number of molecules detected within a cell (correlates strongly with unique genes)  
+3. The percentage of reads that map to the mitochondrial genome (optional)  
+
+```{r Quality control,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE}
+
+# The [[ operator can add columns to object metadata. This is a great place to stash QC stats
+
+PC_hMETtg_obj[["percent.mt"]] <- PercentageFeatureSet(PC_hMETtg_obj, pattern = "^mt-")
+```
+  
+VlnPlot draws a violin plot of single cell data (gene expression, metrics, PC scores, etc.). Here, three features, "nFeature_RNA", "nCount_RNA", and "percent.mt" are presented.
+  
+```{r,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE}
+VlnPlot(PC_hMETtg_obj, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+```
+  
+
+The marker genes ("Krt5","Pik3cb","Msmb","Ar","Hgf","hMETtg") are presented.
+  
+```{r,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE}
+VlnPlot(PC_hMETtg_obj, features = c("Krt5","Pik3cb","Msmb","Ar","Hgf","hMETtg"), ncol = 3)
+```
+  
+FeatureScatter is typically used to visualize feature-feature relationships, but can be used for anything calculated by the object, i.e. columns in object metadata, PC scores etc.
+  
+```{r,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE}
+plot1 <- FeatureScatter(PC_hMETtg_obj, feature1 = "nCount_RNA", feature2 = "percent.mt") + NoLegend()
+plot2 <- FeatureScatter(PC_hMETtg_obj, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+plot1 + plot2
+```
+  
+Then, filter cells that have unique feature counts over 8,000, less than 200, or  >25% mitochondrial counts
+  
+```{r,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE}
+PC_hMETtg_obj
+PC_hMETtg_obj_subset_new <- subset(PC_hMETtg_obj, subset = nFeature_RNA > 200 & nFeature_RNA < 8000 & percent.mt < 25)
+PC_hMETtg_obj_subset_new
+```
+
+## Normalizing and Feature selection
+
+If there are multiple samples in the object, split them first by identities.
+# Normalizing data 
+By default, we applied a global-scaling normalization method "LogNormalize" that normalizes the feature expression measurements for each cell by the total expression, multiplies this by a scale factor (10,000 by default), and log-transforms the result. Normalized values are stored in pbmc[["RNA"]]@data.
+# Feature selection
+By default, we return 2,000 features per dataset. These will be used in downstream analysis, like PCA.
+  
+```{r Normalizing and Feature selection,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE}
+hMETtg.list <- SplitObject(PC_hMETtg_obj_subset_new, split.by = "orig.ident")
+hMETtg.list <- lapply(X = hMETtg.list, FUN = function(x) {
+  x <- NormalizeData(x)
+  x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000)
+})
+PC_hMETtg_obj_subset_new<-FindVariableFeatures(PC_hMETtg_obj_subset_new, selection.method = "vst", nfeatures = 2000)
+```
+  
+Identify the 50 most highly variable genes and plot variable features with labels
+  
+```{r,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE}
+# Identify the 50 most highly variable genes
+
+top50 <- head(VariableFeatures(PC_hMETtg_obj_subset_new), 50)
+top50
+# plot variable features with and without labels
+
+plot1 <- VariableFeaturePlot(PC_hMETtg_obj_subset_new)
+plot2 <- LabelPoints(plot = plot1, points = top50, repel = TRUE)
+plot2
+```
+  
+## Performing integration
+We then identify anchors using the FindIntegrationAnchors function, which takes a list of Seurat objects as input, and use these anchors to integrate the two datasets together with IntegrateData.
+  
+```{r Performing integration,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE}
+
+hMETtg_Pool.anchors<- FindIntegrationAnchors(object.list = hMETtg.list, dims = 1:20)
+hMETtg_Pool.combined<-IntegrateData(anchorset = hMETtg_Pool.anchors, dims = 1:20)
+```
+  
+Now we can run a single integrated analysis on all cells!  
+The standard workflow for visualization and clustering is adopted
+  
+```{r,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE}
+DefaultAssay(hMETtg_Pool.combined) <- "integrated"
+
+# Run the standard workflow for visualization and clustering
+
+hMETtg_Pool.combined <- ScaleData(hMETtg_Pool.combined, verbose = FALSE)
+hMETtg_Pool.combined <- RunPCA(hMETtg_Pool.combined, npcs = 30, verbose = FALSE)
+
+# t-SNE and Clustering
+
+hMETtg_Pool.combined <- RunUMAP(hMETtg_Pool.combined, reduction = "pca", dims = 1:20)
+hMETtg_Pool.combined <- FindNeighbors(hMETtg_Pool.combined, reduction = "pca", dims = 1:20)
+hMETtg_Pool.combined <- FindClusters(hMETtg_Pool.combined, resolution = 0.5)
+```
+  
+Visualization of cell populations by UMAP, grouped by identity (p1) or labeled with clusters
+  
+```{r,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE}
+
+p1 <- DimPlot(hMETtg_Pool.combined, reduction = "umap", group.by = "orig.ident")
+p1
+```
+  
+UMAP labeled with clusters
+  
+```{r,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE}
+p2 <- DimPlot(hMETtg_Pool.combined, reduction = "umap", label = TRUE)
+p2
+```
+  
+To visualize the two conditions side-by-side, use the split.by argument to show each condition colored by cluster.
+  
+```{r,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE}
+DimPlot(hMETtg_Pool.combined, reduction = "umap", split.by = "orig.ident")
+```
+  
+We also estimate the cell populations between groups
+  
+```{r,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE}
+library("plyr")
+group_clusters<-data.frame(groups=hMETtg_Pool.combined$orig.ident,clusters=hMETtg_Pool.combined$seurat_clusters)
+counts <- ddply(group_clusters, .(group_clusters$groups, group_clusters$clusters), nrow)
+names(counts) <- c("groups", "clusters", "Freq")
+p_cell_population<-ggplot2::ggplot(counts,aes(fill=groups,y=Freq,x=clusters)) + geom_bar(position="stack", stat="identity") + cowplot::theme_cowplot()
+p_cell_population
+```
+  
+## Identifying conserved markers
+FindConservedMarkers performs differential gene expression testing for each dataset/group and combines the p-values using meta-analysis methods from the MetaDE R package.  
+Explore these marker genes for each cluster and use them to annotate our clusters as specific cell types.
+  
+```{r Identifying conserved markers,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE}
+DefaultAssay(hMETtg_Pool.combined) <- "RNA"
+Conserved_markers_c1 <- FindConservedMarkers(hMETtg_Pool.combined, ident.1 = "1", grouping.var = "orig.ident", verbose = FALSE)
+head(Conserved_markers_c1)
+markers_Seurat <- FindAllMarkers(hMETtg_Pool.combined, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25,test.use = "roc")
+```
+  
+## Cell Type Annotation
+scCATCH: Automatic Annotation on Cell Types of Clusters from Single-Cell RNA Sequencing Data  
+Cite: [www.ncbi.nlm.nih.gov/pmc/articles/PMC7031312/](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7031312/)  
+Two steps are performed: 1) Cluster marker genes identification; 2) Cluster annotation.
+  
+```{r Cell Type Annotation,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE}
+
+# clu_markers <- findmarkergenes(object = hMETtg_Pool.combined,species =c("Human","Mouse"),cell_min_pct = 0.25,pvalue = 0.05,logfc = 0.25,cluster = 'All')
+#clu_ann<-scCATCH(object =clu_markers$clu_markers,species = "Mouse",tissue =c("Prostate","Blood","Bladder","Bone","Gonad","Kidney","Skin","Epithelium"))
+```
+  
+Select the top marker genes for each cluster
+  
+```{r,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE}
+
+# "myAUC" represents the area under the ROC curve, 
+# For each gene, evaluates (using AUC) a classifier built on that gene alone,
+# to classify between two groups of cells.
+# An AUC value of 1 means that expression values for this gene alone can perfectly classify the two groupings
+
+markers_Seurat_TOP2<-markers_Seurat %>% group_by(cluster) %>% slice_max(order_by = myAUC, n = 2)
+knitr::kable(markers_Seurat_TOP2,caption = "Top 2 cluster markers")
+```
+  
+The clusters will be renamed according to the annotations  
+UMAP plot of cell populations with annotations
+```{r,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE}
+markers_Seurat_TOP2_to_label<-markers_Seurat_TOP2$gene[!duplicated(markers_Seurat_TOP2$gene)]
+new.cluster.ids<-c("Luminal epithelia 1","Basal epithelia 1","Basal epithelia 2","Luminal epithelia 2","Luminal epithelia 3","Stromal Cell","Basal epithelia 3","Glandular epithelia","Mesangial","Basal epithelia 4","Fibroblast 1","Dendritic Cell 1","Tubule Cell","Macrophage","CD3+ T Cell","Vascular Endothelial 1","Dendritic Cell 2","Progenitor Stem","Vascular Endothelial 2","Endothelial Cell","Fibroblast 2","Luminal epithelia 4")
+names(new.cluster.ids) <- levels(hMETtg_Pool.combined)
+hMETtg_Pool.combined<-RenameIdents(hMETtg_Pool.combined,new.cluster.ids)
+DimPlot(hMETtg_Pool.combined, reduction = "umap", label = TRUE, pt.size = 0.5,split.by ="orig.ident") + NoLegend()
+```
+  
+Conserved cell markers can be viewed by DotPlot function across conditions
+  
+```{r,fig.height=8,fig.width=12,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE}
+
+# marker genes from eLife 2020;9:e59465 DOI: 10.7554/eLife.59465
+# Marker_Genes_eLife_2020_9_1_24<-c("Gsdma","Tgm4","Ceacam2","Mgll","Cldn10","Msmb","Trpv6","Lrrc26","Abo","Ppp1r1b","Krt4","Wfdc2","Krt7","Tacstd2","Clu","Ly6а","Aqp3","Ly6d","Trp63","Cd44","Krt5","Krt14","Syp","Chga","Krt8","Cd24a","Pbsn","Hoxb13","Foxa1","Itga6","Ar","Ceacam1","Prom1","Nkx3-1")
+#Marker_Genes_eLife<-intersect(rownames(hMETtg_Pool.combined),Marker_Genes_eLife_2020_9_1_24)
+# DotPlot function can be useful for viewing conserved cell type markers across conditions
+# showing both the expression level and the percentage of cells in a cluster expressing any given gene.
+
+DotPlot(hMETtg_Pool.combined,features = markers_Seurat_TOP2_to_label,dot.scale = 4) + RotatedAxis()
+# Split by "orig.ident" 
+DotPlot(hMETtg_Pool.combined,features = markers_Seurat_TOP2_to_label, cols = c("blue", "red"), dot.scale = 4, split.by = "orig.ident") + RotatedAxis()
+```
+  
+## Biomarkers detection
+Now that we've aligned the test and control cells, we can start to do comparative analyses and look at the differences among groups. One way to look broadly at these changes is to plot the average expression of both the stimulated and control cells and look for genes that are visual outliers on a scatter plot. Here, we take the average expression of both test and control cell populations and generate the scatter plots, highlighting genes that exhibit top marker genes.
+  
+```{r Biomarkers detection,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE}
+
+Luminal.cells <- subset(hMETtg_Pool.combined, idents = c("Luminal epithelia 1","Luminal epithelia 2","Luminal epithelia 3","Luminal epithelia 4"))
+Idents(Luminal.cells) <- "orig.ident"
+avg.Luminal.cells<-data.frame(log1p(AverageExpression(Luminal.cells, verbose = FALSE)$RNA))
+avg.Luminal.cells$gene <- rownames(avg.Luminal.cells)
+p1 <- ggplot(avg.Luminal.cells, aes(WT, hMETtg)) + geom_point() + ggtitle("Luminal epithelia")
+marks_lum<-c(avg.Luminal.cells$gene[(avg.Luminal.cells$hMETtg/avg.Luminal.cells$WT)>2.5 & avg.Luminal.cells$hMETtg>1.5],avg.Luminal.cells$gene[(avg.Luminal.cells$hMETtg/avg.Luminal.cells$WT)<0.4 & avg.Luminal.cells$WT>1.5])
+p1 <- LabelPoints(plot = p1, points = marks_lum, repel = TRUE)
+p1
+```
+  
+What genes change in different conditions for cells of the same type. First, we create a column in the meta.data slot to hold both the cell type and stimulation information and switch the current ident to that column.  
+Then we use FindMarkers to find the genes that are different between Test and Control cells.  Notice that many of the top genes that show up here are the same as the ones we plotted earlier as core marker genes.
+  
+```{r,fig.height=8,fig.width=12,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE}
+hMETtg_Pool.combined_new<-hMETtg_Pool.combined
+hMETtg_Pool.combined_new$celltype.stim <- paste(Idents(hMETtg_Pool.combined_new), hMETtg_Pool.combined_new$orig.ident, sep = "_")
+hMETtg_Pool.combined_new$celltype <- Idents(hMETtg_Pool.combined_new)
+Idents(hMETtg_Pool.combined_new) <- "celltype.stim"
+Lum.hMETtg.response <- FindMarkers(hMETtg_Pool.combined_new, ident.1 = "Luminal epithelia 1_hMETtg", ident.2 = "Luminal epithelia 1_WT", verbose = FALSE)
+head(Lum.hMETtg.response, n = 15)
+Lum.genes.hMETtg<-Lum.hMETtg.response %>% dplyr::slice_max(avg_log2FC,n=2)
+Lum.genes.WT<-Lum.hMETtg.response %>% dplyr::slice_min(avg_log2FC,n=2)
+FeaturePlot(hMETtg_Pool.combined_new, features = c(rownames(Lum.genes.hMETtg),rownames(Lum.genes.WT)), split.by = "orig.ident", max.cutoff = 3, cols = c("grey", "red"))
+# We'd like to visulize the marker genes across cell types, such as *Clu* and *hMETtg*
+
+plots <- VlnPlot(hMETtg_Pool.combined_new, features = c("Clu","hMETtg"), split.by = "orig.ident", group.by = "celltype",pt.size = 0, combine = FALSE)
+wrap_plots(plots = plots, ncol = 1)
+
+```
+## Save results
+```{r Save results,include=TRUE,echo=FALSE,message = FALSE,warning = FALSE}
+file_name <- paste0("Seurat_scRNA_seq_Analysis","_",Sys.Date(),".rds")
+save(hMETtg_Pool.combined,markers_Seurat,file = file_name)
+```
+  
+The individual clusters can be further reculstered.
+

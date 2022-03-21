@@ -1,0 +1,40 @@
+---
+title: "Linear_Trend_in_scatter_ggplot2"
+output: html_document
+---
+
+```{r, include=TRUE}
+# Library
+library(ggplot2)
+library(hrbrthemes)
+library("cowplot")
+# Create dummy data
+data <- data.frame(
+  cond = rep(c("condition_1", "condition_2"), each=10), 
+  my_x = 1:100 + rnorm(100,sd=9), 
+  my_y = 1:100 + rnorm(100,sd=16) 
+)
+head(data)
+# Basic scatter plot.
+p1 <- ggplot(data, aes(x=my_x, y=my_y)) + 
+  geom_point( color="#69b3a2") +
+  theme_ipsum()
+ p1
+# with linear trend
+p2 <- ggplot(data, aes(x=my_x, y=my_y)) +
+  geom_point() +
+  geom_smooth(method=lm , color="red", se=FALSE) +
+  theme_ipsum()
+p2
+# linear trend + confidence interval
+p3 <- ggplot(data, aes(x=my_x, y=my_y)) +
+  geom_point() +
+  geom_smooth(method=lm , color="red", fill="#69b3a2", se=TRUE) +
+  theme_ipsum()
+p3
+p4 <- ggplot(data, aes(x=my_x, y=my_y,color=cond)) +
+  geom_point() +
+  geom_smooth(method=lm , color="red", fill="#69b3a2", se=TRUE) +
+  cowplot::theme_cowplot()
+p4
+```
