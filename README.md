@@ -1,5 +1,8 @@
 # Sequencing_RMarkdown_Pipelines
 
+When login login Appolo cluster, 
+
+
 The analytic pipelines for sequencing in IGC include:
 1. RIP_seq_Pipeline.Rmd
 2. RNA_seq_Analysis_Pipeline.Rmd
