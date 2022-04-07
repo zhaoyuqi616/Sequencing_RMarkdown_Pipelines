@@ -8,6 +8,9 @@ git clone git@github.com:zhaoyuqi616/Sequencing_RMarkdown_Pipelines.git
  
 3) Then, run the pipeline using
 Rscript -e "rmarkdown::render('example.Rmd',params=list(args = myarg))"
+4) If you prefer to use R script, open R
+knitr::purl("Seurat_scRNA_seq_Analysis.Rmd")
+You will get a Seurat_scRNA_seq_Analysis.R script.
 
 The current analytic pipelines for sequencing in IGC include:
 
